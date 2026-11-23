@@ -79,6 +79,15 @@ const skillStandardMap = readTable(path.join(POLICY, '技能标准化映射表.c
 const dict10 = readWorkbook(path.join(ROOT, '招聘技能词典_双人统一标注版_v1.0.xlsx'));
 const dict11 = readWorkbook(path.join(ROOT, '就业端/招聘技能词典_双人统一标注版_v1.1_扩词草案.xlsx'));
 const gapWorkbook = readWorkbook(path.join(POLICY, '任务1_技能缺口清单_v2.xlsx'));
+const industrySkillBook = readWorkbook('C:/Users/陈吴晟/.kimi-code/sessions/wm_7eb49287-8cac-4ed2-ba63-89576246b475/session_b19e4b7a-e159-4a58-84a8-a2767eeb5e16/attachments/f_b162ff89-f37d-4ee0-b760-da0adc72083e-行业需求技能小类标注.xlsx');
+const industryJobBook = readWorkbook('C:/Users/陈吴晟/.kimi-code/sessions/wm_7eb49287-8cac-4ed2-ba63-89576246b475/session_b19e4b7a-e159-4a58-84a8-a2767eeb5e16/attachments/f_eb6945e9-12e8-4d71-8653-3b73b90e4f4d-list1_行业职业标注.xlsx');
+const industryAnnotations = {
+  skills: industrySkillBook['行业技能标注'],
+  occupations: industryJobBook['行业职业标注'],
+  sources: industryJobBook['依据与口径'],
+  skillIndex: industryJobBook['标准名称索引'],
+  evidenceNote: '附件不含2016—2018与2023—2025两期样本量，不用于直接生成z统计量或p值。',
+};
 
 const policyStats = JSON.parse(fs.readFileSync(path.join(POLICY, '十五五规划_结构化抽取/汇总_各省抽取统计.json'), 'utf8'));
 const industries = [];
@@ -189,10 +198,10 @@ const data = {
   },
   courses, mappings, reverseGaps, zeroCourses, doubleZeroSkills, skillDict, cufeCourses, cufeCoverage, programProfiles, top30,
   anchors, industries, demandRows, policyOutliers, courseOutliers, policyBounds, courseBounds,
-  employmentTrend, marketRates, salaryCoefficients, defaultActions, dictionarySheets,
+  employmentTrend, marketRates, salaryCoefficients, defaultActions, dictionarySheets, industryAnnotations,
   gapSheets: Object.fromEntries(Object.entries(gapWorkbook).map(([name, rows]) => [name, { count: rows.length, sample: rows.slice(0, 5) }])),
   skillMapSample: skillStandardMap.slice(0, 5), sources,
-  dataWarnings: ['就业端目录未提供93,602条招聘明细，仅有v1.1词典；比例检验使用研究报告汇总率，原始分期样本量未披露时不出具z/p值。'],
+  dataWarnings: ['就业端目录未提供93,602条招聘明细，仅有v1.1词典；比例检验使用研究报告汇总率，原始分期样本量未披露时不出具z/p值。', '行业标注附件未披露两期样本量，不用于直接生成z/p；仅用于行业—职业—技能溯源与描述统计。'],
 };
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });

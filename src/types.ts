@@ -87,6 +87,7 @@ export interface PlatformData {
   marketRates: { skill: string; rate: number; keywords: string[] }[];
   salaryCoefficients: { skill: string; effect: number; low: number; high: number }[];
   defaultActions: ActionItem[];
+  industryAnnotations: { skills: Row[]; occupations: Row[]; sources: Row[]; skillIndex: Row[]; evidenceNote: string };
   dictionarySheets: Record<string, Record<string, { count: number; sample: Row[] }>>;
   gapSheets: Record<string, { count: number; sample: Row[] }>;
   skillMapSample: Row[];

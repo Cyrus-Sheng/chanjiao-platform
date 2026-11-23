@@ -24,7 +24,7 @@ export function Overview({ data, onSource, onNavigate }: { data: PlatformData; o
       <div className="hero-orbit" aria-hidden="true"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><div className="orbit-center"><Network size={34} /><strong>供需对齐</strong><span>SKILL GRAPH</span></div><div className="orbit-node node-a">政策需求<small>31 省</small></div><div className="orbit-node node-b">课程供给<small>227 门</small></div><div className="orbit-node node-c">就业反馈<small>2016—2025</small></div></div>
     </section>
 
-    <div className="data-alert"><TriangleAlert size={18} /><div><strong>数据边界已显式登记</strong><span>{data.dataWarnings[0]}</span></div><Badge tone="amber">不填假数据</Badge></div>
+    <div className="data-alert"><TriangleAlert size={18} /><div><strong>数据边界已显式登记</strong><span>{data.dataWarnings.join('；')}</span></div><Badge tone="amber">不填假数据</Badge></div>
 
     <SectionTitle eyebrow="DATA FOUNDATION" title="三端数据底座" description="点击任一指标，可查看来源文件与前 5 行原始记录。" />
     <div className="metrics-grid">
@@ -36,6 +36,8 @@ export function Overview({ data, onSource, onNavigate }: { data: PlatformData; o
       <Metric label="外部基座 · 工商记录" value="1.22 亿" note={`精确值 ${Number(data.stats.externalBusiness).toLocaleString()}`} onClick={() => open('外部研究基座', '区域技能需求与高校课程评估_最终研究报告.pdf', '工商登记 122,380,690（1978—2025）', '汇总研究报告，不含逐条工商记录。')} />
       <Metric label="外部基座 · 去重招聘" value="845 万" note={Number(data.stats.externalRecruitment).toLocaleString()} onClick={() => open('外部招聘研究样本', '区域技能需求与高校课程评估_最终研究报告.pdf', '精确去重招聘记录 8,450,150', '用于长期趋势与薪资条件关联。')} />
       <Metric label="薪资主模型岗位" value={Number(data.stats.salaryModelJobs).toLocaleString()} note="12 技能大类联合回归" onClick={() => open('薪资回归模型', '区域技能需求与高校课程评估_最终研究报告.pdf', '100 × [exp(βₖ) − 1]%；主模型 N = 425,096', '控制地区、年份、行业、职业等固定效应；关联不等于因果。')} />
+      <Metric label="行业职业标注" value={data.industryAnnotations.occupations.length} note={`${data.industryAnnotations.skills.length} 条行业技能映射`} onClick={() => open('行业职业标注', 'list1_行业职业标注.xlsx', 'GB/T 4754行业 + 职业分类大典 + 技能标准集原名')} />
+      <Metric label="标准技能索引" value={data.industryAnnotations.skillIndex.length} note="技能小类原名 · 岗位数与比例" onClick={() => open('标准名称索引', 'list1_行业职业标注.xlsx', '仅用于描述统计；附件不含两期N，不直接计算z/p')} />
     </div>
 
     <div className="overview-lower">
