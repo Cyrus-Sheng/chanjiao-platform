@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import * as Switch from '@radix-ui/react-switch';
 import { AlertCircle, CheckCircle2, ChevronRight, Download, FileUp, RotateCcw, Scale, Settings2, Trash2, WandSparkles } from 'lucide-react';
-import type { ActionItem, ConstraintConfig, PlatformData, ProgramProfile, Row } from '../types';
+import type { ActionItem, ConstraintConfig, PlatformData, ProgramProfile, Row, SimulationConfig } from '../types';
 import type { SourceContent } from '../components/SourceDialog';
 import { Badge, Card, Formula, SectionTitle } from '../components/Common';
 import { actionProgram, constraints, coverageModel, facultyFieldFor, gapForecast, generateScheme, matchingModel, recommendAction, salaryForecast } from '../lib/engines';
-import { downloadCourseTemplate, parseCourseCsv } from '../lib/io';
+import { downloadCourseTemplate } from '../lib/io';
+import { parseCourseFile } from '../lib/tabular';
 import { assessFaculty } from '../lib/audits';
 import { buildMarkdownReport } from '../lib/report';
 import { downloadReviewedCsv } from '../lib/review';
@@ -13,10 +14,10 @@ import { courseDesign } from '../lib/courseDesign';
 
 const actionTypes: ActionItem['type'][] = ['新增课程', '新增微模块', '扩容已有课', '置换低需求课', '暂不处理'];
 
-export function Designer({ data, actions, setActions, programId, setProgramId, config, setConfig, targetHours, landing, growth, includeShared, setIncludeShared, onReset, onSource, onImportProfile, onImportDecision, onDeleteProfile, onReviewCourse }: {
+export function Designer({ data, actions, setActions, programId, setProgramId, config, setConfig, targetHours, landing, growth, simulation, includeShared, setIncludeShared, onReset, onSource, onImportProfile, onImportDecision, onDeleteProfile, onReviewCourse }: {
   data: PlatformData; actions: ActionItem[]; setActions: (actions: ActionItem[]) => void;
   programId: string; setProgramId: (id: string) => void; config: ConstraintConfig; setConfig: (config: ConstraintConfig) => void;
-  targetHours: number; landing: number; growth: number; includeShared: boolean; setIncludeShared: (value: boolean) => void; onReset: () => void; onSource: (source: SourceContent) => void;
+  targetHours: number; landing: number; growth: number; simulation: SimulationConfig; includeShared: boolean; setIncludeShared: (value: boolean) => void; onReset: () => void; onSource: (source: SourceContent) => void;
   onImportProfile: (profile: ProgramProfile) => void;
   onImportDecision: (payload: { programId: string; actions: ActionItem[]; config: ConstraintConfig; includeShared?: boolean; profileSnapshot?: ProgramProfile }) => void;
   onDeleteProfile: (id: string) => void;
@@ -63,7 +64,7 @@ export function Designer({ data, actions, setActions, programId, setProgramId, c
   const importCourses = async (file?: File) => {
     if (!file) return;
     try {
-      const imported = parseCourseCsv(await file.text(), file.name);
+      const imported = await parseCourseFile(file);
       onImportProfile(imported);
       setIoMessage(`已导入「${imported.name}」${imported.courseCount}门课程；数据仅保存在本机浏览器。`);
     } catch (error) { setIoMessage(`导入失败：${error instanceof Error ? error.message : '文件格式错误'}`); }
@@ -89,12 +90,12 @@ export function Designer({ data, actions, setActions, programId, setProgramId, c
     const link = document.createElement('a'); link.href = url; link.download = `产教智对_${profile.shortName}_决策方案.json`; link.click(); URL.revokeObjectURL(url);
   };
   const exportReport = () => {
-    const markdown = buildMarkdownReport({ data, profile, config, actions: actions.filter(action => actionProgram(action) === programId || (includeShared && actionProgram(action) === 'shared')), includeShared, result, faculty, gap, matching, beforeCoverage, afterCoverage, salary, landing, growth, targetHours });
+    const markdown = buildMarkdownReport({ data, profile, config, actions: actions.filter(action => actionProgram(action) === programId || (includeShared && actionProgram(action) === 'shared')), includeShared, result, faculty, gap, matching, beforeCoverage, afterCoverage, salary, landing, growth, simulation, targetHours });
     const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `专业调整论证报告_${profile.shortName}.md`; link.click(); URL.revokeObjectURL(url);
   };
   return <div className="page designer-page">
-    <SectionTitle eyebrow="DECISION SUPPORT / GENERALIZED ENGINE" title="通用方案设计器" description="面向内置或本地导入专业生成、校验并导出决策方案；报告示例只是初始案例。" action={<div className="header-actions"><button className="secondary-button" onClick={downloadCourseTemplate}>下载课程模板</button><label className="secondary-button file-button" role="button" tabIndex={0}><FileUp size={15} />导入专业<input type="file" accept=".csv,text/csv" onChange={event => { void importCourses(event.target.files?.[0]); event.target.value = ''; }} /></label><label className="secondary-button file-button" role="button" tabIndex={0}><FileUp size={15} />导入方案<input type="file" accept=".json,application/json" onChange={event => { void importDecisionFile(event.target.files?.[0]); event.target.value = ''; }} /></label><button className="primary-button" onClick={exportReport}><Download size={15} />导出论证报告</button><button className="secondary-button" onClick={exportDecision}><Download size={15} />导出方案</button><button className="secondary-button" onClick={onReset}><RotateCcw size={15} />恢复示例</button></div>} />
+    <SectionTitle eyebrow="DECISION SUPPORT / GENERALIZED ENGINE" title="通用方案设计器" description="面向内置或本地导入专业生成、校验并导出决策方案；报告示例只是初始案例。" action={<div className="header-actions"><button className="secondary-button" onClick={downloadCourseTemplate}>下载课程模板</button><label className="secondary-button file-button" role="button" tabIndex={0}><FileUp size={15} />导入专业<input type="file" accept=".csv,.xlsx,.xls" onChange={event => { void importCourses(event.target.files?.[0]); event.target.value = ''; }} /></label><label className="secondary-button file-button" role="button" tabIndex={0}><FileUp size={15} />导入方案<input type="file" accept=".json,application/json" onChange={event => { void importDecisionFile(event.target.files?.[0]); event.target.value = ''; }} /></label><button className="primary-button" onClick={exportReport}><Download size={15} />导出论证报告</button><button className="secondary-button" onClick={exportDecision}><Download size={15} />导出方案</button><button className="secondary-button" onClick={onReset}><RotateCcw size={15} />恢复示例</button></div>} />
     {ioMessage && <div className="io-message"><AlertCircle size={16} />{ioMessage}<button onClick={() => setIoMessage('')} aria-label="关闭导入提示">×</button></div>}
 
     <Card className="program-workbench"><div className="program-select"><label>应用专业<select value={programId} onChange={event => setProgramId(event.target.value)}>{data.programProfiles.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div><Badge>{profile.basis}</Badge><p>{profile.courseCount}门课程 · {profile.totalHours.toLocaleString()}学时 · {profile.totalCredits}学分</p><button className="text-button" onClick={() => onSource({ title: profile.name, file: profile.sourceFile, formula: '专业基线由课程底表逐行汇总，不沿用硬编码示例', rows: profile.courses.slice(0, 5) })}>查看专业底表 →</button>{profile.id.startsWith('local-') && <button className="text-button delete-profile" onClick={() => { onDeleteProfile(profile.id); setIoMessage(''); }}>删除导入专业</button>}</div></div><div className="generator-rules"><div><Settings2 size={18} /><strong>通用生成规则</strong></div><label>需求范围<select value={generator.region} onChange={event => setGenerator({ ...generator, region: event.target.value as 'beijing' | 'national' })}><option value="beijing">北京优先</option><option value="national">全国缺口</option></select></label><label>课程策略<select value={generator.strategy} onChange={event => setGenerator({ ...generator, strategy: event.target.value as 'module' | 'balanced' | 'course' })}><option value="module">微模块优先</option><option value="balanced">热度分层</option><option value="course">完整课程优先</option></select></label><label>新增动作上限<select value={generator.maxActions} onChange={event => setGenerator({ ...generator, maxActions: Number(event.target.value) })}>{[4, 6, 8, 10].map(value => <option key={value} value={value}>{value}项</option>)}</select></label><button className="primary-button" onClick={runGenerator}><WandSparkles size={16} />生成并替换本专业方案</button></div><p className="workbench-note">生成器使用本专业已确认覆盖、54项反向缺口和Top30；仅用户标记“可置换”的课程参与学时平衡。映射待复核、学期不全、师资未配置或学分不平衡时均明确保留风险状态。</p></Card>

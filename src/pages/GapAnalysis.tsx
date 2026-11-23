@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Info, Search, SlidersHorizontal } from 'lucide-react';
+import { Info, Search, FileUp, Download } from 'lucide-react';
 import type { PlatformData } from '../types';
 import type { SourceContent } from '../components/SourceDialog';
 import { Chart } from '../components/Chart';
 import { Badge, Card, SectionTitle } from '../components/Common';
 import { proportionTest } from '../lib/engines';
+import { downloadTrendTemplate, parseTrendFile } from '../lib/tabular';
 
 export function GapAnalysis({ data, onSource }: { data: PlatformData; onSource: (source: SourceContent) => void }) {
   const [filter, setFilter] = useState<'全部' | '北京' | '京外'>('全部');
@@ -13,7 +14,17 @@ export function GapAnalysis({ data, onSource }: { data: PlatformData; onSource: 
   const [industry, setIndustry] = useState('互联网和相关服务');
   const industryJob = data.industryAnnotations.occupations.find(row => row['行业名称（原表）'] === industry);
   const industrySkill = data.industryAnnotations.skills.find(row => row['行业名称'] === industry);
-  const testableCount = data.employmentTrend.filter(row => row.n0 !== null && row.n1 !== null && proportionTest(row.p0, row.p1, row.n0, row.n1)).length;
+  const [trendRows, setTrendRows] = useState(data.employmentTrend);
+  const [trendMessage, setTrendMessage] = useState('');
+  const testableCount = trendRows.filter(row => row.n0 !== null && row.n1 !== null && proportionTest(row.p0, row.p1, row.n0, row.n1)).length;
+  const importTrend = async (file?: File) => {
+    if (!file) return;
+    try {
+      const rows = await parseTrendFile(file);
+      setTrendRows(rows);
+      setTrendMessage(`已载入${rows.length}个区域的检验数据，z统计量与p值已自动复算。`);
+    } catch (error) { setTrendMessage(`检验数据导入失败：${error instanceof Error ? error.message : '文件格式错误'}`); }
+  };
   const gaps = useMemo(() => data.reverseGaps.filter(row => {
     const region = row['北京十五五命中'] === '是' ? '北京' : '京外';
     return (filter === '全部' || filter === region) && String(row['标准技能名']).includes(query);
@@ -42,7 +53,7 @@ export function GapAnalysis({ data, onSource }: { data: PlatformData; onSource: 
 
     <SectionTitle eyebrow="STATISTICAL VALIDITY" title="统计检验与异常值分析" description="按证据自动生成可检验项与不足项；没有两期样本量时不输出z/p。" />
     <div className="two-col wide-left">
-      <Card><SectionTitle title="数据分析与商业智能 · 两比例 z 检验" description="H₀：两窗口提及率相同；双侧检验，独立岗位近似，期望频数充足。" action={<Badge tone={testableCount ? 'green' : 'amber'}>可检验 {testableCount} 项</Badge>} /><div className="inline-notice"><Info size={16} />已核验补充附件：只有两期提及率，没有两期样本量 N₀ / N₁；缺 N 的行不计算 z/p。</div><div className="table-wrap"><table><thead><tr><th>区域</th><th>2016—18</th><th>2023—25</th><th>N₀ / N₁</th><th>z</th><th>p</th></tr></thead><tbody>{data.employmentTrend.map(row => { const test = row.n0 !== null && row.n1 !== null ? proportionTest(row.p0, row.p1, row.n0, row.n1) : null; return <tr key={row.region}><td><strong>{row.region}</strong></td><td>{(row.p0 * 100).toFixed(2)}%</td><td>{(row.p1 * 100).toFixed(2)}%</td><td>{row.n0 ?? '未披露'} / {row.n1 ?? '未披露'}</td><td>{test ? test.z.toFixed(2) : '未计算'}</td><td>{test ? <Badge tone={test.p < 0.05 ? 'green' : 'gray'}>{test.p < 0.001 ? '<0.001' : test.p.toFixed(3)}</Badge> : <Badge tone="gray">未计算</Badge>}</td></tr>; })}</tbody></table></div><div className="insufficient-list"><h3>证据不足项（共 {data.salaryCoefficients.length} 类）</h3>{data.salaryCoefficients.map(row => <div key={row.skill}><span>{row.skill}</span><small>{row.skill === '数据分析与商业智能' ? '有两期率值；缺两期N，不能计算z/p' : '只有薪资回归系数；缺两期提及率与N，不能检验'}</small></div>)}</div></Card>
+      <Card><SectionTitle title="数据分析与商业智能 · 两比例 z 检验" description="H₀：两窗口提及率相同；双侧检验，独立岗位近似，期望频数充足。" action={<div className="header-actions"><Badge tone={testableCount ? 'green' : 'amber'}>可检验 {testableCount} 项</Badge><label className="secondary-button file-button" role="button" tabIndex={0}><FileUp size={14} />导入检验数据<input type="file" accept=".csv,.xlsx,.xls" onChange={event => { void importTrend(event.target.files?.[0]); event.target.value = ''; }} /></label><button className="secondary-button" onClick={downloadTrendTemplate}><Download size={14} />模板</button></div>} /><div className="inline-notice"><Info size={16} />已核验补充附件：只有两期提及率，没有两期样本量 N₀ / N₁；缺 N 的行不计算 z/p。</div>{trendMessage && <div className="io-message">{trendMessage}</div>}<div className="table-wrap"><table><thead><tr><th>区域</th><th>2016—18</th><th>2023—25</th><th>N₀ / N₁</th><th>z</th><th>p</th></tr></thead><tbody>{trendRows.map(row => { const test = row.n0 !== null && row.n1 !== null ? proportionTest(row.p0, row.p1, row.n0, row.n1) : null; return <tr key={row.region}><td><strong>{row.region}</strong></td><td>{(row.p0 * 100).toFixed(2)}%</td><td>{(row.p1 * 100).toFixed(2)}%</td><td>{row.n0 ?? '未披露'} / {row.n1 ?? '未披露'}</td><td>{test ? test.z.toFixed(2) : '未计算'}</td><td>{test ? <Badge tone={test.p < 0.05 ? 'green' : 'gray'}>{test.p < 0.001 ? '<0.001' : test.p.toFixed(3)}</Badge> : <Badge tone="gray">未计算</Badge>}</td></tr>; })}</tbody></table></div><div className="insufficient-list"><h3>证据不足项（共 {data.salaryCoefficients.length} 类）</h3>{data.salaryCoefficients.map(row => <div key={row.skill}><span>{row.skill}</span><small>{row.skill === '数据分析与商业智能' ? '有两期率值；缺两期N，不能计算z/p' : '只有薪资回归系数；缺两期提及率与N，不能检验'}</small></div>)}</div></Card>
       <Card><SectionTitle title="政策热度 · IQR 异常值" description={`全量 ${data.policyBounds.n} 个政策技能，不只看Top30。`} /><div className="iqr-values"><div><span>Q1</span><strong>{data.policyBounds.q1.toFixed(2)}</strong></div><div><span>Q3</span><strong>{data.policyBounds.q3.toFixed(2)}</strong></div><div><span>上界</span><strong>{data.policyBounds.upper.toFixed(2)}</strong></div></div><div className="big-stat"><strong>{data.policyOutliers.length}</strong><span>项高热异常</span></div><p className="muted">Top30 中有 <b>{top30Outliers.length}</b> 项超过上界。异常代表政策信号显著偏离主体分布，不代表录入错误；应作为优先布局证据保留。</p><div className="outlier-list">{data.policyOutliers.slice(0, 5).map(row => <div key={row.skill}><span>{row.skill}</span><strong>{row.heat.toFixed(1)}</strong></div>)}</div></Card>
     </div>
     <Card><SectionTitle title="课程学时 · IQR 异常值" description={`227门课程；Q1=${data.courseBounds.q1}，Q3=${data.courseBounds.q3}，正常范围 [${Math.max(0, data.courseBounds.lower)}, ${data.courseBounds.upper}] 学时。`} action={<Badge tone="amber">{data.courseOutliers.length} 门异常</Badge>} /><div className="course-outliers">{data.courseOutliers.map(row => <div key={row.id}><span><strong>{row.name}</strong><small>{row.school} · {row.type}</small></span><b>{row.hours} 学时</b><em>{row.hours > data.courseBounds.upper ? '实践/集中授课导致高学时，需核实容量' : '短专题或讲座模块，不宜直接判定低效'}</em></div>)}</div></Card>

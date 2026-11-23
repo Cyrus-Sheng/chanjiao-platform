@@ -1,5 +1,5 @@
-import type { ActionItem, ConstraintConfig, PlatformData, ProgramProfile } from '../types';
-import { counterfactualGap, constraints, coverageModel, gapForecast, matchingModel, salaryForecast } from './engines';
+import type { ActionItem, ConstraintConfig, PlatformData, ProgramProfile, SimulationConfig } from '../types';
+import { counterfactualGap, constraints, coverageModel, gapForecast, matchingModel, salaryForecast, simulateEnrollment } from './engines';
 import { assessFaculty } from './audits';
 import { courseDesign } from './courseDesign';
 
@@ -19,6 +19,7 @@ interface ReportInput {
   landing: number;
   growth: number;
   targetHours: number;
+  simulation: SimulationConfig;
 }
 
 function cell(value: unknown) {
@@ -30,9 +31,30 @@ function status(value: boolean | null) {
 }
 
 export function buildMarkdownReport(input: ReportInput) {
-  const { data, profile, config, actions, includeShared, result, faculty, gap, matching, beforeCoverage, afterCoverage, salary, landing, growth, targetHours } = input;
+  const { data, profile, config, actions, includeShared, result, faculty, gap, matching, beforeCoverage, afterCoverage, salary, landing, growth, targetHours, simulation } = input;
   const active = actions.filter(action => action.enabled && action.type !== '暂不处理');
   const teaching = active.filter(action => action.hours > 0 && ['新增课程', '新增微模块'].includes(action.type)).map(action => ({ action, design: courseDesign(action, profile) }));
+  const pressure = [
+    { name: '当前设定', landing, growth, horizon: 4, config },
+    { name: '落地率50%', landing: 50, growth, horizon: 4, config },
+    { name: '需求增速9%', landing, growth: 9, horizon: 4, config },
+    { name: '师资无法新增', landing, growth, horizon: 4, config: { ...config, facultyTeams: 0 } },
+    { name: '低落地 + 高需求 + 师资不足', landing: 50, growth: 9, horizon: 4, config: { ...config, facultyTeams: 0 } },
+  ].map(scenario => ({ ...scenario, gap: gapForecast(data, actions, scenario.landing, profile.id, includeShared), matching: matchingModel(data, actions, profile.id, scenario.landing, scenario.growth, targetHours), coverage: coverageModel(data, actions, profile.id, true, scenario.landing), solver: constraints(data, actions, profile.id, scenario.config) }));
+  const baseGap = gapForecast(data, actions, landing, profile.id, includeShared).forecast;
+  const baseMatch = matchingModel(data, actions, profile.id, landing, growth, targetHours).after;
+  const tornado = [
+    { name: '落地率50%', landing: 50, growth, targetHours, shared: includeShared },
+    { name: '落地率100%', landing: 100, growth, targetHours, shared: includeShared },
+    { name: '需求增速4%', landing, growth: 4, targetHours, shared: includeShared },
+    { name: '需求增速9%', landing, growth: 9, targetHours, shared: includeShared },
+    { name: '目标学时32h', landing, growth, targetHours: 32, shared: includeShared },
+    { name: '目标学时128h', landing, growth, targetHours: 128, shared: includeShared },
+    { name: includeShared ? '关闭跨校协同' : '开启跨校协同', landing, growth, targetHours, shared: !includeShared },
+  ].map(variant => ({ name: variant.name, gap: (gapForecast(data, actions, variant.landing, profile.id, variant.shared).forecast - baseGap) * 100, match: matchingModel(data, actions, profile.id, variant.landing, variant.growth, variant.targetHours).after - baseMatch }));
+  const sim = simulateEnrollment(data, actions, landing, growth, simulation, profile.id, includeShared);
+  const newMicro = active.filter(action => action.type === '新增微模块').length;
+  const newCourses = active.filter(action => action.type === '新增课程').length;
   const noAction = counterfactualGap(data, growth, gap.baseline);
   const riskDefinition = [
     { id: 'R1', name: '学生适应度与先修断裂', impact: 3, categories: ['学生适应', '先修链'], response: '设置试听、先修补强和回退通道；存在先修断裂时不得提交实施。' },
@@ -132,6 +154,31 @@ ${result.repairs.map(item => `- ${item}`).join('\n')}
 - H*是课程决策阈值，不是实测统计常数；薪资系数表示条件关联，不直接解释为课程因果收益。
 - 技能匹配度、专业对口率与起薪分别计算，不混用口径。
 - 师资评估只使用课程群近似，不涉及教师个人评价。
+
+### 确定性压力测试
+
+| 情景 | 评估期 | 缺口率 | 匹配度 | Um | 约束结论 |
+|---|---:|---:|---:|---:|---|
+${pressure.map(scenario => `| ${scenario.name} | ${scenario.horizon}年 | ${(scenario.gap.forecast * 100).toFixed(2)}% | ${scenario.matching.after.toFixed(2)} | ${scenario.coverage.um.toFixed(4)} | ${!scenario.solver.feasible ? '不可行' : scenario.solver.complete ? '可行' : '条件可行'} |`).join('\n')}
+
+### 参数敏感性
+
+| 扰动项 | 缺口率变化 / pp | 匹配度变化 / 分 |
+|---|---:|---:|
+${tornado.map(row => `| ${row.name} | ${row.gap >= 0 ? '+' : ''}${row.gap.toFixed(2)} | ${row.match >= 0 ? '+' : ''}${row.match.toFixed(2)} |`).join('\n')}
+
+### 多阶段传导
+
+| 阶段 | 传导内容 | 当前量化结果 |
+|---|---|---|
+| T0 证据与基线 | 缺口和映射完备性确认 | 缺口基线 ${(gap.baseline * 100).toFixed(2)}%，匹配度 ${matching.before.toFixed(2)}，待复核${profile.dataQuality.pendingMappingCourses}门 |
+| T1 微模块与师资准备 | ${newMicro}个微模块；先核验师资背景与团队容量 | ${result.teacherDelta}个净新增团队需求 |
+| T2 完整课程与分流 | ${newCourses}门完整课程进入实施 | 预计分流${config.expectedStudents ?? '待定'}人 / 容量${config.directionCapacity ?? '待定'}人 |
+| T3 数据复核与上线闸口 | 映射、先修链、硬约束复核 | ${result.feasible ? result.complete ? '已配置约束通过' : '条件可行' : '不可行'} |
+| T4 四年效果评估 | 缺口、匹配度与起薪预测 | 缺口率 ${(gap.forecast * 100).toFixed(2)}%，匹配度 ${matching.after.toFixed(2)}，起薪改善 ${salary.salaryLow.toFixed(2)}%—${salary.salaryHigh.toFixed(2)}% |
+| T5 首轮就业反馈 | 反馈F与规模指数 | F=${sim.rows[5]?.feedback.toFixed(3)}，规模指数=${sim.rows[5]?.enrollment.toFixed(2)} |
+| T6 滚动修正 | ${simulation.smoothing}年滑动平均与±${simulation.limit}%限幅 | 进入下一轮课程与规模调整 |
+| T10 收敛复核 | 反馈机制是否稳定 | 规模指数=${sim.rows[10]?.enrollment.toFixed(2)}，${sim.converged ? '收敛' : '仍在调整'} |
 
 ### 师资课程群近似评估
 
